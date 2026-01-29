@@ -1,0 +1,211 @@
+
+\documentclass[12pt,a4paper,table,xcdraw]{article}
+\usepackage{enumitem}
+\usepackage{float}
+% APA CITATION COMMANDS
+\usepackage[
+  backend=biber,
+  style=apa,
+  sorting=ynt
+]{biblatex}
+\DeclareLanguageMapping{american}{american-apa}
+\addbibresource{bibliography.bib}
+
+%para que sólo salga el número de la citación
+%\usepackage[natbib=true,style=numeric,sorting=none]{biblatex}
+%\addbibresource{bibliography.bib}
+%\usepackage[spanish]{babel}
+\usepackage{hyperref}
+\usepackage{graphicx}
+%\usepackage[backend=bibtex,style=verbose-trad2]{biblatex}
+%\decimalpoint
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amsthm,amssymb}
+\usepackage{amsfonts}
+\linespread{1.15}
+
+\usepackage{listings}
+\usepackage{subcaption}
+%\usepackage{times}
+\usepackage{comment}
+\usepackage{longtable}
+\usepackage{booktabs,longtable,tabu}
+\usepackage{pdflscape}
+\usepackage{tikz}
+\usetikzlibrary{positioning}
+\usetikzlibrary{shapes.geometric, arrows}
+\usepackage{multirow}
+\usepackage{tabularx}
+\usepackage{appendix}
+\usepackage{rotating}
+\usepackage[margin=1 in]{geometry}
+%\usepackage{xcolor}
+%\usepackage[table,xcdraw]{xcolor}
+\usepackage{setspace}
+%\usepackage{xcolor}
+\usetikzlibrary{calc}
+\usepackage{caption}
+\usepackage{url}
+\usepackage{nameref}
+\usepackage{multicol}
+%\usepackage{hyperref, apacite}
+\usepackage{array,booktabs,tabularx}
+\usepackage[nottoc,notlot,notlof]{tocbibind}
+\usepackage{adjustbox}
+% \newcolumntype{C}{>{\centering\arraybackslash}X}
+\captionsetup{skip=0pt}
+% \newcolumntype{s}{>{\hsize=.8\hsize}X}
+\usepackage{subcaption}
+
+
+
+\usepackage{listings}
+\usepackage{pythontex}
+\usepackage{xcolor}
+
+% Define colors first
+\definecolor{codegreen}{rgb}{0.13,0.67,0.8}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{RGB}{240,240,240}
+\definecolor{magenta}{rgb}{0.88,0.07,0.37}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=3pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+\lstset{style=mystyle}
+\renewcommand{\lstlistingname}{Script}
+
+\newcommand{\addstretch}[1]{\addtolength{#1}{\fill}}
+
+
+% Define R language style
+\lstdefinelanguage{R}{
+    keywords={if, else, repeat, while, function, for, in, next, break, TRUE, FALSE, NULL, Inf, NaN, NA, NA_integer_, NA_real_, NA_complex_, NA_character_},
+    keywordstyle=\color{mymagenta}\bfseries,
+    morekeywords={library, require, install.packages, data, ggplot, subset, filter, mutate, select, arrange, summarise, group_by},
+    alsoletter={._},
+    morestring=[b]",
+    morestring=[b]',
+    stringstyle=\color{codepurple},
+    comment=[l]\#,
+    commentstyle=\color{codegreen},
+    backgroundcolor=\color{backcolour},
+    showstringspaces=false,
+    basicstyle=\ttfamily\footnotesize,
+    numbers=left,
+    numberstyle=\tiny\color{codegray},
+    breaklines=true,
+    tabsize=2
+}
+
+\lstset{language=R, style=mystyle}
+
+
+
+
+
+
+
+
+\everymath{\displaystyle}
+\setlength\parindent{8pt}
+\makeatletter
+\def\url@leostyle{%
+  \@ifundefined{selectfont}{\def\UrlFont{\sf}}{\def\UrlFont{\small\ttfamily}}}
+\makeatother
+%% Now actually use the newly defined style.
+\urlstyle{leo}
+
+\decimalpoint
+
+\newcommand{\HRule}
+{\rule{\linewidth}{0.5mm}}
+\setlength{\parskip}{1em}
+
+
+
+% \hyphenation{}
+
+
+% -------------Definiciones necesarias para generar la portada, el resumen, etc
+
+
+\setlength{\belowcaptionskip}{5pt}
+\markright{\footnotesize{Statistical Analysis Plan} \\
+\scriptsize{Spring 2025} $\mid$ \footnotesize{STAT 938}}
+\pagestyle{myheadings}
+\begin{document}
+
+\newcommand\fnote[1]{\captionsetup{font=scriptsize}\caption*{#1}}
+
+\renewcommand{\tablename}{Tabla}
+
+\setlength{\parskip}{2mm}
+
+\begin{titlepage}
+
+\begin{center}
+
+
+% Upper part of the page
+
+\HRule \\[0.2cm]
+    {\LARGE \bfseries Statistical Analysis Plan \par}
+\HRule \\[1.5cm]
+
+
+\textsc{\large STAT 938: Final Project}\\[2cm]
+
+
+\textsc{\large 
+David Awosoga \\
+Sharon Xue \\ 
+Xamy Lopez Cortes}\\[2cm]
+% Bottom of the page
+{\large \today}
+
+\hspace{10em}
+\end{center}
+
+\hspace{10em}
+
+\begin{figure}[H]
+
+  \centering
+  \includegraphics[width=.5\linewidth]{pic/UWaterloo_Stats_Actuarial_Sci_Logo_vert_rgb (2).png}
+
+
+\end{figure}
+
+\end{titlepage}
+
+
+\setcounter{figure}{0}
+
+
+\tableofcontents
+
+\newpage
+\include{SAP}
+\printbibliography
+
+
+
+\end{document}

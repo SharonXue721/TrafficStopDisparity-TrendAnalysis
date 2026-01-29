@@ -1,0 +1,76 @@
+\section{Introduction}
+\label{sec: Introduction}
+\textcolor{blue}{description of the problem and objectives}
+
+The purpose of this project is to investigate potential disparities in traffic stops conducted by police officers across the United States. This initiative is part of a broader effort led by the Stanford Open Policing Project and the U.S. National Highway Traffic Safety Administration (NHTSA), aimed at improving interactions between the public and law enforcement \cite{Barghouty_Bonilla_Corbett-Davies_Goel_Jenson_Kim_Nudell_Overgoor_Phillips_Shoemaker_etal2023}.
+
+We would like to answer whether there are disparities in traffic stops based on the characteristics of the driver and the officer, as well as the geographic location of the stop. Specifically, we would like to investigate whether traffic stops disproportionately target non-white individuals or men, whether certain cities or locations show more balanced patterns of enforcement relative to their local demographics, and whether officer characteristics, such as race or age, if available, are associated with different patterns of behavior. For this study we will limit to a selected subset of states rather than analyzing data from the entire United States, as it will be explained in Section \ref{sec: Data Description}.
+
+
+
+\section{Description of Investigation Design}
+\label{sec: Description of Investigation Design}
+\textcolor{red}{what is the difference between section 2 and 3?}
+
+\textcolor{blue}{Brief description of the variables in the study (i.e., what data is collected). 
+Brief description of the study design (i.e., how data is collected). 
+Brief description of sample size considerations (i.e., how much data is collected)}
+
+
+\section{Data Description}
+\label{sec: Data Description}
+\textcolor{blue}{Describe the data that is going to be/ is being/ has been collected}
+
+The Stanford Open Policing Project began in 2015 by requesting traffic stop data from states across the United States. According to \cite{Barghouty_Bonilla_Corbett-Davies_Goel_Jenson_Kim_Nudell_Overgoor_Phillips_Shoemaker_etal2023}, the project has since collected and standardized over 200 million records of traffic stop and search data from across the country.
+
+This dataset has several limitations and challenges, as noted in \cite{Barghouty_Bonilla_Corbett-Davies_Goel_Jenson_Kim_Nudell_Overgoor_Phillips_Shoemaker_etal2023}. For example, some states do not collect demographic information about the drivers who are stopped, or some data that is collected may not be publicly released, or the information that is available is not standardized across all states.
+
+
+The original dataset includes records from over 100 jurisdictions, with several states each contributing millions of observations. Due to the size and complexity of the data, we focus our analysis on a subset of jurisdictions and years to make the scope of the project feasible while preserving analytical integrity.
+We selected these states based on:
+
+\begin{itemize}
+    \item Size and diversity of their populations. 
+    \item Richness and completeness of key variables (\textsf{stop\_date}, \textsf{location}, race-related variables, sex-related variables, age-related variables, \textsf{vehicle\_color}, \textsf{vehicle\_make}), and disposition (if the driver was found guilty or not).
+\end{itemize}
+
+
+We restrict the time frame to \textcolor{red}{TIME SLOT}  to maintain consistency and focus on recent trends. The final working dataset contains approximately \textcolor{red}{NUMBER} of observations.
+
+
+\section{Analysis to be Done}
+\label{sec: Analysis to be Done}
+\textcolor{blue}{This dataset has several limitations and challenges, as noted in \cite{Barghouty_Bonilla_Corbett-Davies_Goel_Jenson_Kim_Nudell_Overgoor_Phillips_Shoemaker_etal2023}. For example, some states do not collect demographic information about the drivers who are stopped, some data that is collected may not be publicly released, and the information that is available is not standardized across all states.}
+
+
+Our proposed solution includes both descriptive and inferential analyses to address the main research questions. This approach is designed to find unfair differences, track changes over time and across places, and explore how stop outcomes are related to people’s backgrounds, such as races and gender.
+We will begin with exploratory data analysis (EDA) to understand the distribution of key variables. This includes calculating stop frequencies by race and gender, and visualizing stop patterns by time slots. 
+Next, we will apply a series of statistical models and tests:
+
+\begin{itemize}
+    \item Logistic regression models will be used to estimate the odds of a stop resulting in a particular outcome (e.g., search or citation) based on subject race, sex, violation type, and location. We will also consider including officer-level covariates if available.
+    \item Chi-square tests of independence will help assess relationships between categorical variables like race and outcome.
+    \item Multilevel logistic models may be used to account for clustering within jurisdictions or cities.
+    \item Trend analysis, using rolling means or smoothing splines, will help identify changes in stop behavior over time.
+\end{itemize}
+
+\section{Mockup Results}
+\label{sec: Mockup Results}
+\textcolor{blue}{Preview how results will be presented with simulated or partial data}
+
+\section{Gantt Chart }
+\label{sec: Gantt Chart }
+
+A Gantt chart is one of the most popular and useful ways of showing tasks displayed against time. It shows a list of activities along with a suitable time scale. Each activity is represented by a bar, so that the position and length of the bar reflects the start date, duration and end date of the activity \cite{Duke_2025}.
+
+The following link gives access to the Gant chart for this project:
+
+
+\href{https://uofwaterloo-my.sharepoint.com/:x:/g/personal/xlopezco_uwaterloo_ca/Ed_zfacBNrBAnWXW1PbjUe8BzJP3JdBNc0YfIim7XvdwKA?e=O9RDme}{Excel file for the Gantt chart}
+
+
+\section{Service Contract}
+\label{sec: Service Contract}
+
+hello Xamy 
+

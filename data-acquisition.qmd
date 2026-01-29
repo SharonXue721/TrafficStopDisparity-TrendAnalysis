@@ -1,0 +1,175 @@
+---
+title: "Data Acquisition Workflow"
+author: "David Awosoga"
+format: 
+  html:
+    code-fold: true
+editor: visual
+---
+
+# Overview
+
+The purpose of this script is to programmatically download, parse, and clean the datasets from the [**Stanford Open Policing Project**](https://openpolicing.stanford.edu) to put them into a format conducive and tractable for statistical analysis.
+
+## Data Acquisition
+
+```{r}
+#| code-summary: Load packages
+#| output: false
+
+library(tidyverse) # for data manipulation
+library(rvest) # for web scraping
+library(gt) # for creating tables
+library(arrow) # for reading and writing parquet files
+```
+
+We first scrape a summary table of the URL's that have the stop data for each place.
+
+```{r}
+#| message: false
+# read in the data site
+data_site <- read_html("https://openpolicing.stanford.edu/data/")
+
+# extract the names of the states and the URLs for the CSV data files
+state_names <- 
+  data_site %>% 
+  html_elements(".state-title") %>% 
+  html_text2() %>% 
+  str_remove_all("\\t")
+
+csv_data_urls <- 
+  data_site %>% 
+  html_elements("[data-title='Download']") %>% 
+  html_elements("a") %>% 
+  html_attr("href")  %>% 
+  str_subset(".csv")
+
+# create a dataframe with the state names and their corresponding CSV data URLs
+full_data <- 
+  data_site %>% 
+  html_table() %>% 
+  bind_rows() %>% 
+  janitor::clean_names() %>% 
+  select(city = state) %>% 
+  mutate(state = if_else(city %in% state_names, city, NA)) %>% 
+  fill(state, .direction = "down") %>% 
+  filter(!city %in% state_names) %>% 
+  add_column(data_link = csv_data_urls)
+
+full_data %>% head() %>% gt()
+```
+
+Now that we have the links to each individual dataset, we programmatically download the data and save it into a folder of our choice
+
+```{r}
+#| include: false
+location = Sys.getenv("LOCATION")
+```
+
+NOTE: Don't actually run the following code chunk unless you have 50+ GB of free space on your computer.
+
+```{r}
+#| eval: false
+
+# increase the timeout of your R session if necessary
+options(timeout = 180)
+
+# set the location where you want the files to be downloaded to
+location = Sys.getenv("LOCATION")
+
+# check which ones already exist
+files_to_download = setdiff(basename(csv_data_urls), 
+                            list.files(location,  pattern = "*\\.zip"))
+
+actual_links = csv_data_urls[sapply(csv_data_urls, 
+                                    \(x) any(str_detect(x, files_to_download) ))]
+
+# download the zip files for the ones that don't already exist
+
+invisible(sapply(actual_links, \(x) {
+  download.file(x, paste0(location, basename(x)), 
+                mode = "wb",quiet = T))})
+
+# unzip the files
+
+invisible(sapply(list.files(location, full.names = T, 
+                            pattern = "*\\.zip"), 
+                 \(x) unzip(zipfile = x, overwrite = T, exdir = location)))
+
+# remove all zip files
+
+unlink(list.files(location, full.names = T, pattern = "*\\.zip$"), recursive = TRUE)
+```
+
+The total files make up `r round(sum(file.info(list.files(location, full.names = T, pattern = ".csv"))$size)/1000000000, 2)` GB, which is MASSIVE. Let's compress the dataset using the [`parquet`](https://parquet.apache.org) format. Additionally, we want to add the metadata that is found in each file name (`state`, `city`, and `last_updated`) as columns in each individual dataset so that we can combine them and perform grouping aggregations.
+
+```{r}
+#| eval: false
+library(arrow)
+
+# get metadata from all of the files that were successfully downloaded
+
+file_meta_data <- 
+  list.files(location, full.names = T, pattern = "*\\.csv$") %>% 
+  tibble() %>% 
+    separate_wider_regex(
+      cols = everything(),
+      patterns = c(
+        "^.+\\/\\/",
+        state = ".{2}", "_", city = ".+", "_",
+        last_updated = "\\d{4}_\\d{2}_\\d{2}", "\\.csv$"), 
+      cols_remove = F) %>% 
+  rename(file_name = ".")
+
+# convert the csv files to parquet format
+
+for(fname in file_meta_data$file_name) {
+  
+  opp_file = read_csv(fname, show_col_types = F)
+  
+  state = file_meta_data %>% 
+    filter(file_name == fname) %>% 
+    pull(state) %>% 
+    str_to_upper()
+  
+  city = file_meta_data %>% 
+    filter(file_name == fname) %>% 
+    pull(city) %>% 
+    str_replace_all("_", " ")
+  
+  last_updated = file_meta_data %>% 
+    filter(file_name == fname) %>% 
+    pull(last_updated) %>% 
+    str_replace_all("_", "-")
+  
+  opp_file$state = state
+  opp_file$city = city
+  opp_file$last_updated = as.Date(last_updated)
+  
+  # for column type compatibility, remove time if all are NA's
+  if (all(is.na(opp_file$time))) opp_file <-opp_file %>% select(-time)
+  
+  
+  arrow::write_parquet(opp_file, str_replace_all(fname, "\\.csv", ".parquet"))
+}
+
+# put all of the parquet files to GitHub Releases
+
+library(piggyback)
+
+piggyback::pb_release_create(tag = "OPP-data")
+
+piggyback::pb_upload(
+  list.files(location, full.names = T, pattern = "*\\.parquet$"),
+  tag = "OPP-data",
+  overwrite = TRUE
+)
+```
+
+```{r}
+#| include: false
+
+parquet_path = file.path(location, "parquet")
+```
+
+By converting all of the data to `.parquet` files, the combined size of the data is now `r round(sum(file.info(list.files(parquet_path, full.names = T, pattern = ".parquet"))$size)/1000000000, 2)` GB, a MASSIVE reduction. There are `r formatC( nrow(arrow::open_dataset(parquet_path, format = "parquet")), big.mark = ",")` rows in the dataset, each representing a traffic stop.

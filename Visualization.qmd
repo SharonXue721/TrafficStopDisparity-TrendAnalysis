@@ -1,0 +1,470 @@
+---
+title: "Sharon-visualization"
+format: pdf
+editor: visual
+---
+
+## Heatmap
+
+```{r}
+library(readr)
+state_data <- read_csv("~/Desktop/UW/2025 spring/sta 938/Final project/az_statewide_2020_04_01 2.csv")
+```
+
+```{r}
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(sf)     
+library(stringr)
+library(tigris)    
+options(tigris_use_cache = TRUE)
+
+install.packages("curl")
+
+# Counts of stops for each county
+stop_counts <- state_data |>filter(!is.na(county_name)) |>
+  count(county_name, name = "num_stops")
+
+# Download all US counties or for a specific state
+# AZ sample
+az_counties <- counties(state = "AZ", cb = TRUE, class = "sf")
+
+# Join Stop Counts to Spatial Data
+az_map <- az_counties |>
+  left_join(stop_counts, by = c("NAMELSAD" = "county_name"))
+
+# Calculate the center point
+az_map_centroid <- st_centroid(az_map)
+
+# Extract the coorinate
+coords <- st_coordinates(az_map_centroid)
+az_map_centroid <- az_map_centroid |>
+  mutate(x = coords[, 1],
+         y = coords[, 2])
+
+# Plot
+ggplot(az_map) +
+  geom_sf(aes(fill = num_stops), color = "white") +
+  geom_text(data = az_map_centroid,
+            aes(x = x, y = y, label = NAME),
+            size = 2.5, color = "black") +
+  scale_fill_gradient(low = "lightblue", high = "red", na.value = "gray90") +
+  labs(title = "Traffic Stops by County in Arizona",
+       fill = "Number of Stops") +
+  theme_minimal()
+
+
+```
+
+## Histogram
+
+```{r}
+ggplot(stop_counts, aes(x = reorder(county_name, num_stops), y = num_stops)) +
+  geom_col(fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Number of Traffic Stops by County in Arizona",
+    x = "County Name",
+    y = "Number of Stops"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+output_dir <- "plots/state_heatmaps"
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+
+states <- ds %>%
+  select(state) %>%
+  distinct() %>%
+  collect() %>%
+  pull(state)
+
+az_data <- ds %>%
+  filter(state == "AZ", !is.na(lat), !is.na(lng)) %>%
+  collect()
+
+us_map <- map_data("state")
+az_map <- us_map %>%
+  filter(region == "arizona")
+
+
+```
+
+```{r}
+library(leaflet)
+library(leaflet.extras)
+library(dplyr)
+
+az_data <- ds %>%
+  filter(state == "AZ", !is.na(lat), !is.na(lng)) %>%
+  collect()
+
+# Sample: Clean and round lat/lng
+az_coords <- az_data%>%
+  filter(!is.na(lat), !is.na(lng)) %>%
+  filter(between(lat, 31, 37), between(lng, -115, -109)) %>%
+  mutate(
+    lat = round(lat, 4),
+    lng = round(lng, 4)
+  )
+
+# Interactive heatmap over a real map
+leaflet(data = az_coords) %>%
+  addTiles() %>%
+  addHeatmap(
+    lng = ~lng, lat = ~lat,
+    radius = 8, blur = 15, max = 0.05,
+  ) %>%
+  fitBounds(
+    lng1 = min(az_coords$lng, na.rm = TRUE),
+    lat1 = min(az_coords$lat, na.rm = TRUE),
+    lng2 = max(az_coords$lng, na.rm = TRUE),
+    lat2 = max(az_coords$lat, na.rm = TRUE)
+  )
+
+
+```
+
+```{r}
+
+library(leaflet)
+library(leaflet.extras)
+library(dplyr)
+library(htmlwidgets)
+
+plot_state_heatmap <- function(full_data, state_abbr, 
+                               output_dir = "plots",
+                               digits = 4, max_val = 0.05) {
+  # Filter state data and collect into memory
+  state_data <- full_data %>%
+    filter(state == state_abbr, !is.na(lat), !is.na(lng)) %>%
+    collect()
+
+  # Round lat/lng
+  state_coords <- state_data %>%
+    mutate(
+      lat = round(lat, digits),
+      lng = round(lng, digits)
+    )
+
+  if (nrow(state_coords) == 0) {
+    message(paste("No data for state", state_abbr))
+    return(NULL)
+  }
+
+  # Create heatmap
+  map <- leaflet(state_coords) %>%
+    addTiles() %>%
+    addHeatmap(
+      lng = ~lng, lat = ~lat,
+      radius = 8, blur = 15, max = max_val
+    ) %>%
+    fitBounds(
+      lng1 = min(state_coords$lng, na.rm = TRUE),
+      lat1 = min(state_coords$lat, na.rm = TRUE),
+      lng2 = max(state_coords$lng, na.rm = TRUE),
+      lat2 = max(state_coords$lat, na.rm = TRUE)
+    )
+
+  # Save map as HTML
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir)
+  }
+
+  saveWidget(map, file = file.path(output_dir, paste0("heatmap_", state_abbr, ".html")),
+             selfcontained = TRUE)
+
+  message(paste("✅ Saved heatmap for", state_abbr))
+}
+
+```
+
+```{r}
+plot_state_heatmap(
+  full_data = ds,
+  state_abbr = "AZ")
+```
+
+```{r}
+state
+```
+
+```{r}
+plot_state_heatmap(
+  full_data = ds,
+  state_abbr = "CA")
+
+
+for (abbr in states) {
+  try({
+    plot_state_heatmap(full_data, state_abbr = abbr)
+  }, silent = TRUE)
+}
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+
+set.seed(123)
+k_clusters <- kmeans(az_coords, centers = 10)
+az_coords$cluster <- as.factor(k_clusters$cluster)
+
+
+cluster_summary <- az_coords %>%
+  group_by(cluster) %>%
+  summarise(
+    stop_count = n(),
+    center_lat = mean(lat),
+    center_lng = mean(lng),
+    .groups = "drop"
+  )
+
+
+ggplot(cluster_summary, aes(x = center_lng, y = center_lat)) +
+  geom_point(aes(size = stop_count, fill = cluster), shape = 21, color = "black", alpha = 0.7) +
+  geom_text_repel(aes(label = cluster)) +
+  scale_size(range = c(4, 20)) +
+  scale_fill_brewer(palette = "Set3") +
+  coord_fixed() +  
+  labs(
+    title = "AZ Traffic Stops - Cluster Bubble Plot",
+    x = "Longitude", y = "Latitude",
+    size = "Number of Stops", fill = "Cluster"
+  ) +
+  theme_minimal()
+
+```
+
+```{r}
+
+library(ggplot2)
+library(viridis)
+library(dplyr)
+
+
+ggplot(az_coords, aes(x = lng, y = lat)) +
+  stat_density_2d(
+    aes(fill = ..level..),
+    geom = "polygon",
+    color = "white",
+    alpha = 0.7
+  ) +
+  scale_fill_viridis_c(option = "inferno") +
+  coord_fixed() +
+  labs(
+    title = "Static Heatmap of Traffic Stops in Arizona",
+    x = "Longitude", y = "Latitude",
+    fill = "Density"
+  ) +
+  theme_minimal()
+
+
+```
+
+```{r}
+# calculate the proportion of the count of stops for each state 
+
+# Step 1: Pull date and state, and make sure date is Date class
+state_date_range <- ds %>%
+  select(state, date) %>%
+  filter(!is.na(state), !is.na(date)) %>%
+  mutate(date = as.Date(date)) %>%
+  group_by(state) %>%
+  summarise(
+    min_date = min(date),
+    max_date = max(date),
+    .groups = "drop"
+  ) %>%
+  collect()
+
+# 设置时间范围
+start_date <- as.Date("2014-01-01")
+end_date <- as.Date("2015-12-31")
+
+ds_filtered <- ds %>%
+  filter(!is.na(state), !is.na(date)) %>%
+  mutate(date = as.Date(date)) %>%
+  filter(date >= start_date, date <= end_date) %>%
+  select(state, date) %>%
+  collect()
+
+# 计算每个州在时间范围内的 stop 占比
+state_stop_proportion <- ds_filtered %>%
+  group_by(state) %>%
+  summarise(stop_count = n(), .groups = "drop") %>%
+  mutate(percentage = stop_count / sum(stop_count) * 100) %>%
+  select(state, percentage) %>%
+  arrange(desc(percentage)) 
+
+
+ds_states_all <- ds %>%
+  filter(!is.na(state)) %>%
+  distinct(state) %>%
+  pull(state)
+
+# 从 stop percentage 表中提取已有的40个州
+ds_states_40 <- state_stop_proportion %>%
+  pull(state)
+
+# 找出缺失的州（在 ds 中有但在 40 个中没有）
+missing_states <- setdiff(ds_states_all, ds_states_40)
+
+# 查看结果
+print(missing_states)
+
+
+# from the license_demographics, get the proportion of the licenced drivers for each state over the whole country
+
+license_demographics_clean <- license_demographics %>%
+  filter(!state %in% c("Total", "Arkansas", "Wyoming"))
+
+state_lookup <- tibble::tibble(
+  state_abbr = state.abb,
+  state_full = state.name
+)
+
+license_demo <- license_demographics_clean %>%
+  left_join(state_lookup, by = c("state" = "state_full")) %>%
+  filter(state_abbr %in% state_stop_proportion$state) %>%
+  select(state = state_abbr, total_drivers)
+
+license_demo <- license_demo %>%
+  mutate(driver_prop = round(100 * total_drivers / sum(total_drivers), 2))
+
+comparison_df <- state_stop_proportion %>%
+  rename(stop_prop = percentage) %>%
+  left_join(license_demo, by = "state") %>%mutate(diff = stop_prop - driver_prop)
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# 假设你已经有了名为 comparison_df 的数据框
+# 包含列：state, stop_prop, driver_prop
+
+# 转换为长格式
+comparison_long <- comparison_df %>%
+  pivot_longer(cols = c(stop_prop, driver_prop),
+               names_to = "type", values_to = "percentage") %>%
+  mutate(type = recode(type,
+                       stop_prop = "Traffic Stops",
+                       driver_prop = "Licensed Drivers"))
+
+# 绘图
+label_df <- comparison_df %>%
+  mutate(label = paste0(round(diff, 2), "%")) %>%
+  select(state, stop_prop, label)
+
+# step 3: 绘图
+ggplot(comparison_long, aes(x = state, y = percentage, fill = type)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.7), width = 0.7) +
+  geom_text(data = label_df,
+            inherit.aes = FALSE,  # ✅ 关键点：不要继承全局的 aes
+            aes(x = state, y = stop_prop + 1.5, label = label),
+            position = position_nudge(x = -0.22),
+            size = 3.5, color = "black") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+  labs(
+    title = "Traffic Stops vs Licensed Drivers by State",
+    x = "State",
+    y = "Proportion (%)",
+    fill = NULL
+  ) +
+  scale_fill_manual(values = c("Traffic Stops" = "#E74C3C", "Licensed Drivers" = "#3498DB")) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "top"
+  )
+
+```
+
+```{r}
+library(tigris)       
+library(sf)           
+library(ggplot2)      
+library(dplyr)        
+options(tigris_use_cache = TRUE)
+
+# read USA map
+us_states <- states(cb = TRUE, resolution = "20m", class = "sf")
+
+# merge map and data 
+us_map <- us_states %>%
+  left_join(comparison_df, by = c("STUSPS" = "state"))
+
+# calculate the centriod point for the state label 
+us_map_centroids <- us_map %>%
+  st_transform(2163) %>%
+  st_point_on_surface() %>%
+  st_transform(4326) %>%
+  mutate(
+    label = ifelse(!is.na(diff),
+                   paste0(STUSPS, "\n", sprintf("%.2f%%", diff)),
+                   STUSPS)  
+  )
+
+# draw the map
+p <- ggplot(us_map) +
+  geom_sf(aes(fill = diff), color = "white", size = 0.3) +
+  scale_fill_gradient2(
+    low = "#4575b4", mid = "white", high = "#d73027",
+    midpoint = 0, na.value = "grey90", name = "Stop - Driver %"
+  ) +
+  geom_text(
+    data = us_map_centroids,
+    aes(x = st_coordinates(geometry)[,1],
+        y = st_coordinates(geometry)[,2],
+        label = label),
+    size = 3, color = "black"
+  ) +
+  coord_sf(
+    xlim = c(-125, -65),
+    ylim = c(24, 50),
+    expand = FALSE
+  ) +
+  labs(
+    title = "Difference Between Traffic Stops and Licensed Drivers Proportion by State",
+    subtitle = "Only 42 states with data are shown in color; others in gray"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12)
+  )
+
+print(p)
+
+# save the plot
+ggsave("plots/stop_vs_driver_map.png", plot = p, width = 12, height = 8, dpi = 300)
+
+```
+
+```{r}
+state_stop_counts <- ds_filtered %>%
+  group_by(state) %>%
+  summarise(stop_count = n(), .groups = "drop")
+
+comparison_df <- comparison_df %>%
+  left_join(state_stop_counts, by = "state")
+
+# total stop counts and total driver counts for the 40 states
+total_stops <- sum(comparison_df$stop_count)
+total_drivers <- sum(comparison_df$total_drivers)
+
+# prop.test
+comparison_df <- comparison_df %>%
+  rowwise() %>%
+  mutate(
+    p_value = prop.test(x = stop_count,
+                        n = total_stops,
+                        p = driver_prop / 100)$p.value,
+    balance_status = ifelse(p_value < 0.05, "Not Balanced", "Balanced")
+  ) %>%
+  ungroup()
+```

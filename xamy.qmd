@@ -1,0 +1,312 @@
+---
+title: "Xamy's notes"
+format: html
+editor: visual
+---
+
+## Interesting from the description of the project:
+
+-   StopWatch is also a cool name hehe
+-   Categories for which we need to examine relationships with traffic stops:
+    -   **Driver's info (race/ethnicity and gender)**
+    -   **Location**
+    -   **Officer info (age and race)**
+-   She suggests that for `vehicle_color` consider just the four most popular colors: ‘white’, ‘black’, ‘gray’, ‘silver’, or ‘other’. Should we do this?
+-   Same for `vehicle_make` ‘toyota’, ‘ford’, ‘chevrolet’, ‘honda’, or ‘other'.
+
+## Website
+
+-   Tutorial for Philadelfia example: <https://openpolicing.stanford.edu/tutorials/>
+
+-   Readme:
+
+    <https://github.com/stanford-policylab/opp/blob/master/data_readme.md>
+
+-   For each dataset, includes a \`A zipped csv file of the cleaned data'
+
+-   'Note that loading and analyzing every state simultaneously takes significant time and computing resources. One way to get around this is to compute aggregate statistics from each state.'
+
+-   'Note that loading and analyzing every state simultaneously takes significant time and computing resources. One way to get around this is to compute aggregate statistics from each state.'
+
+-   I didn't find where was the data.
+
+-   Do we truly need to download data? What if there is useful info in findings and publications and we cite them.
+
+## Findings Section
+
+-   The most common police iteration is traffic stop.
+
+-   This information was not tracked before. Starting tracking from 2015.
+
+-   Difficulties in standardizing info across all states.
+
+-   'The project has found significant racial disparities in policing'.
+
+-   Technical paper: [A large-scale analysis of racial disparities in police stops across the United States](https://5harad.com/papers/100M-stops.pdf)
+
+    -   black drivers were less likely to be stopped after sunset
+
+    -   rate at which stopped drivers were searched and the likelihood that searches turned up contraband: searching black and Hispanic drivers was lower than that for searching white drivers
+
+    -   Fewer stops after legalization of Marijuana, but less stricter criteria for Black and Hispanic than for
+
+-   'Our results indicate that police stops and search decisions suffer from persistent racial bias and point to the value of policy interventions to mitigate these disparities.'
+
+-   'outcome test': Nobel prize-winning economist Gary Becker -\> look at success rate of searches to see if there is racial discrimination.
+
+    -   Sometimes the chances of carrying contraband (as an example) may differ between different race groups. Hence, the rate is different not because discrimination but because one group has higher chances.
+
+-   'threshold test': Try to solve this last problem. Combines both search rates and hit rates: [technical paper](https://5harad.com/papers/threshold-test.pdf)
+
+    -   First, we develop a new test for discrimination—the threshold test—that mitigates theoretical limitations of both benchmark and outcome analysis.
+
+-   At the end of the [Findings Section](https://openpolicing.stanford.edu/findings/) there is some data that it is said to be used for those analysis. Maybe we could use that data (I think it is not that heavy because it is not the complete dataset).
+
+## Statistical Plan Ideas
+
+1.  Introduction:
+
+    Description of the problem (website)
+
+    Objectives (questions)
+
+2.  Description of Investigation Design:
+
+    -   Variables (only the ones we would be using) and cities studied (from <https://github.com/stanford-policylab/opp/blob/master/data_readme.md>): ex: subject_race, subject_age, subject_sex, officer_race, officer_age, officer_sex, vehicle_color, vehicle_make, state (not a variable, though), disposition (guilty or not).
+
+    -   How data is collected: This is explained in [Findings Section](https://openpolicing.stanford.edu/findings/).
+
+    -   How much data is collected: Also in [Findings Section](https://openpolicing.stanford.edu/findings/).
+
+3.  Data Description: Isn't this part the same as 2.? What is the difference?
+
+4.  Analysis t\
+    o be Done: just reading the previous findings and abstracting what can we use (?)
+
+5.  Mockup Results: This would be just talking about the presentation and the report?
+
+Read the data:
+
+```{r}
+library(arrow)
+library(dplyr)
+library(lubridate)
+
+
+location <- "/Users/xamylopez/Documents/U_WATERLOO/THIRD TERM/STAT 938 - STATISTICAL CONSULTING/final project/stat-938-final-project"
+parquet_path = file.path(location, "data", "parquet")
+
+
+ds <- arrow::open_dataset(parquet_path, format = "parquet")
+
+ds %>% 
+  filter(!is.na(lng), !is.na(lat)) %>% 
+  distinct(state, city) %>% 
+  collect()
+
+```
+
+Select Arizona state
+
+```{r}
+
+ds %>% 
+  filter(state == "AZ") %>% 
+  collect() # this is what actually gets you the dataframe
+```
+
+TS will be by frequency of stops. Additionally, we ignore NA in date column
+
+```{r}
+stops_per_day <- ds %>%
+  group_by(date) %>%
+  summarise(n_stops = n()) %>%
+  collect() %>%
+  arrange(date) %>%
+  filter(!is.na(date))
+
+```
+
+```{r}
+library(tsibble)
+stops_ts <- stops_per_day %>%
+  as_tsibble(index = date)
+```
+
+Plot the TS
+
+```{r}
+library(ggplot2)
+
+ggplot(stops_per_day, aes(x = date, y = n_stops)) +
+  geom_line() +
+  labs(title = "Number of Stops per Day", x = "Date", y = "Count") +
+  theme_minimal()
+
+```
+
+```{r}
+ds %>%
+  mutate(year = lubridate::year(date)) %>%
+  group_by(year) %>%
+  summarise(n = n()) %>%
+  collect() %>%
+  arrange(year) %>%
+  print(n = Inf) # very few info before the year 2002 -> maybe we should focus on info after this year
+
+```
+
+Info after 2002
+
+```{r}
+ds %>%
+  filter(date >= as.Date("2003-01-01"))
+```
+
+```{r}
+stops_per_day <- ds %>%
+  filter(date >= as.Date("2003-01-01")) %>%
+  group_by(date) %>%
+  summarise(n_stops = n()) %>%
+  arrange(date) %>%
+  collect()
+```
+
+```{r}
+stops_ts <- stops_per_day %>%
+  as_tsibble(index = date)
+
+# Plot
+ggplot(stops_ts, aes(x = date, y = n_stops)) +
+  geom_line() +
+  labs(title = "Number of Stops per Day", x = "Date", y = "Count") +
+  theme_minimal()
+```
+
+ACF plots
+
+```{r}
+library(forecast)
+
+acf(stops_ts$n_stops, main = "ACF of Number of Stops per Day")
+```
+
+```{r}
+pacf(stops_per_day$n_stops, main = "PACF of Number of Stops per Day")
+```
+
+-   Remember: If autocorrelation is inside blue dotted lines: Correlation is not statistically significant (likely noise)
+
+-   ACF geom decay + PACF Cuts off sharply after lag p = AR(p)
+
+-   ACF Cuts off sharply after lag q + PACF geom decay = MA(q)
+
+-   Both geom decay = ARMA(p,q)
+
+I only see geom decay for PACF-\> ma or arma
+
+Test to see if it is stationary
+
+```{r}
+library(tseries)
+
+adf.test(stops_per_day$n_stops) # if pvalue is small -> reject null of not stationary
+
+```
+
+It is stationary, so there is no need to differentiate it
+
+we try first auto.arima
+
+```{r}
+fit_arima <- auto.arima(stops_per_day$n_stops)
+summary(fit_arima) # although ts was differentiated once (p = 1(AR), d = 1, q = 0(MA))
+# if we want to forecast
+autoplot(forecast(fit_arima, h = 30))
+checkresiduals(fit_arima)
+```
+
+Remember: h0 in Ljung-Box test is residuals are white noise (independent)
+
+Now exp smoothing
+
+`{#{r} fit_ets <- ets(stops_per_day$n_stops) summary(fit_ets) autoplot(forecast(fit_ets, h = 30)) checkresiduals(fit_ets) # not good`
+
+check if there are check points
+
+```{r}
+library(changepoint)
+
+cpt <- cpt.meanvar(stops_per_day$n_stops, #cpt.mean or cpt.var if we want to find changepoints of mean or variance
+                penalty = "AIC")
+cpt
+plot(cpt, main = "Change Points in Number of Stops")
+
+```
+
+```{r}
+library(tidyr)
+
+# Fill missing days 
+stops_ts_full <- stops_ts %>%
+  complete(date = seq.Date(min(date), max(date), by = "day"),
+           fill = list(n_stops = 0))
+
+
+# monthly
+stops_monthly <- stops_ts_full %>%
+  mutate(month = yearmonth(date)) %>%
+  group_by(month) %>%
+  summarise(n_stops = sum(n_stops)) %>%
+  as_tsibble(index = month)
+```
+
+```{r}
+# Convert to ts object with monthly frequency
+stops_ts_obj <- ts(stops_monthly$n_stops, 
+                   start = c(year(min(stops_monthly$month)), month(min(stops_monthly$month))), 
+                   frequency = 12)
+
+```
+
+Add seasonal info (4 mini graphs)
+
+```{r}
+stops_ts <- stops_ts %>%
+  mutate(season = case_when(
+    month(date) %in% c(12, 1, 2) ~ "Winter",
+    month(date) %in% c(3, 4, 5) ~ "Spring",
+    month(date) %in% c(6, 7, 8) ~ "Summer",
+    month(date) %in% c(9, 10, 11) ~ "Fall"
+  ))
+
+ggplot(stops_ts, aes(x = date, y = n_stops, color = season)) +
+  geom_line(aes(color = season)) +
+  facet_wrap(~ season, scales = "free_x")+
+  labs(title = "Number of Stops per Day (Colored by Season)",
+       x = "Date", y = "Number of Stops") +
+  scale_color_manual(values = c(
+    "Winter" = "steelblue", "Spring" = "seagreen", 
+    "Summer" = "tomato", "Fall" = "orange"
+  )) +
+  theme_minimal()
+```
+
+```{r}
+stl_decomp <- stl(stops_ts_obj, s.window = "periodic")
+plot(stl_decomp) 
+stl_decomp
+
+```
+
+Output:
+
+-   trend: smoothed long-term trend
+
+-   seasonal: pattern that gets repeated
+
+-   remainder: random variation that is not explained by season/trend
+
+```{r}
+
+```

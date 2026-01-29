@@ -1,0 +1,383 @@
+---
+title: "Xamy's notes"
+format: html
+editor: visual
+fig-show: inline
+---
+
+Libraries
+
+```{r}
+library(arrow)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(forecast)
+library(tseries)
+library(tidyr)
+library(tsibble)
+library(fs)
+library(ggfortify)
+```
+
+Read the data
+
+```{r}
+location <- "/Users/xamylopez/Documents/U_WATERLOO/THIRD TERM/STAT 938 - STATISTICAL CONSULTING/final project/stat-938-final-project"
+parquet_path = file.path(location, "data", "parquet")
+
+
+ds <- arrow::open_dataset(parquet_path, format = "parquet")
+
+ds %>% 
+  filter(!is.na(lng), !is.na(lat)) %>% 
+  distinct(state, city) %>% 
+  collect()
+```
+
+# Functions to be used
+
+```{r}
+plot_stops_per_day <- function(ds, title = "Number of Stops per Day", start_date = NULL) {
+  # Optionally filter by date
+  if (!is.null(start_date)) {
+    ds <- ds %>% filter(date >= as.Date(start_date))
+  }
+
+  # Compute stops per day
+  stops_per_day <- ds %>%
+    group_by(date) %>%
+    summarise(n_stops = n(), .groups = "drop") %>%
+    collect() %>%
+    arrange(date) %>%
+    filter(!is.na(date))
+
+  # Convert to tsibble
+  stops_ts <- stops_per_day %>%
+    as_tsibble(index = date)
+
+  # Plot
+  p <- ggplot(stops_ts, aes(x = date, y = n_stops)) +
+    geom_line() +
+    labs(title = title, x = "Date", y = "Count") +
+    theme_minimal()
+    
+ return(p)
+    
+}
+```
+
+```{r}
+prepare_monthly_ts <- function(ds, start_date = NULL) {
+  # filter by date
+  if (!is.null(start_date)) {
+    ds <- ds %>% filter(date >= as.Date(start_date))
+  }
+
+  # Daily aggregation
+  stops_per_day <- ds %>%
+    group_by(date) %>%
+    summarise(n_stops = n(), .groups = "drop") %>%
+    collect() %>%
+    arrange(date) %>%
+    filter(!is.na(date)) %>%
+    as_tsibble(index = date)
+
+  # Fill missing days with 0
+  stops_ts_full <- stops_per_day %>%
+    complete(date = seq.Date(min(date), max(date), by = "day"),
+             fill = list(n_stops = 0))
+
+  # Monthly aggregation
+  stops_monthly <- stops_ts_full %>%
+  mutate(month = yearmonth(date)) %>%
+  group_by(month) %>%
+  summarise(n_stops = sum(n_stops), .groups = "drop") %>%
+  complete(month = seq(yearmonth(min(month)), yearmonth(max(month)), by = 1),
+           fill = list(n_stops = 0)) %>%   
+  as_tsibble(index = month)
+    
+
+  # Create ts object
+  stops_ts_obj <- ts(
+    stops_monthly$n_stops,
+    start = c(year(min(stops_monthly$month)), month(min(stops_monthly$month))),
+    frequency = 12
+  )
+
+  # Return results
+  return(list(
+    ts_obj = stops_ts_obj,
+    monthly_df = stops_monthly,
+    daily_filled = stops_ts_full
+  ))
+}
+```
+
+```{r}
+plot_stops_by_season <- function(stops_ts, title = "Number of Stops per Day (Colored by Season)") {
+  # Convert yearmonth index to Date (first day of month)
+  stops_ts <- stops_ts %>%
+    mutate(date = as.Date(month))  # month is a yearmonth, this works in tsibble
+
+  # Add season variable
+  stops_ts <- stops_ts %>%
+    mutate(season = case_when(
+      lubridate::month(date) %in% c(12, 1, 2) ~ "Winter",
+      lubridate::month(date) %in% c(3, 4, 5) ~ "Spring",
+      lubridate::month(date) %in% c(6, 7, 8) ~ "Summer",
+      lubridate::month(date) %in% c(9, 10, 11) ~ "Fall"
+    ))
+    
+    stops_ts <- stops_ts %>%
+  mutate(season = factor(season, levels = c("Winter", "Spring", "Summer", "Fall")))
+
+  # Plot
+  p <- ggplot(stops_ts, aes(x = date, y = n_stops, color = season)) +
+    geom_line() +
+    facet_wrap(~ season, scales = "free_x") +
+    labs(title = title, x = "Date", y = "Number of Stops") +
+    scale_color_manual(values = c(
+      "Winter" = "steelblue", 
+      "Spring" = "seagreen", 
+      "Summer" = "tomato", 
+      "Fall" = "orange"
+    )) +
+    theme_minimal()
+
+    return(p)
+}
+
+```
+
+```         
+```
+
+```{r}
+
+
+analyze_stl_decomposition <- function(ts_obj, title = "STL Decomposition of Stops Time Series") {
+  # STL decomposition
+  stl_decomp <- stl(ts_obj, s.window = "periodic")
+  
+  # Create ggplot object for the STL plot
+  p <- autoplot(stl_decomp) + ggtitle(title)
+  
+  # Extract residual component
+  residuals <- stl_decomp$time.series[, "remainder"]
+  
+  # Find max residual and corresponding time
+  max_index <- which.max(residuals)
+    max_time <- time(residuals)[max_index]  # <- corregido aquí
+    max_value <- residuals[max_index]
+    max_year <- floor(max_time)
+  
+  # Print results
+  cat("Year of max residual:", max_year, "\n")
+  cat("Value of max residual:", max_value, "\n")
+  
+  # Return results
+  return(list(
+    stl = stl_decomp,
+    max_residual_year = max_year,
+    max_residual_value = max_value, 
+    plot = p
+  ))
+}
+
+```
+
+# All USA
+
+```{r}
+# Time series (complete and after 2002)
+p1<- plot_stops_per_day(ds, "Number of Stops per Day - USA")
+p1
+p2 <- plot_stops_per_day(ds, "Number of Stops per Day - USA (after 2002)", start_date = '2003-01-01')
+p2
+```
+
+Filling missing dates with 0
+
+```{r}
+stops_ts_monthly <- prepare_monthly_ts(ds, start_date = '2003-01-01')$monthly_df
+
+```
+
+seasonal information
+
+```{r}
+p3 <- plot_stops_by_season(stops_ts_monthly, title = 'Number of Stops per Day (Colored by Season) - All U.S.A.')
+p3
+```
+
+stl decomposition
+
+```{r}
+analyze_stl_decomposition(stops_ts_monthly, title = "STL Decomposition of Stops Time Series - All U.S.A.")
+p4 <- analyze_stl_decomposition(stops_ts_monthly, title = "STL Decomposition of Stops Time Series - All U.S.A.")$plot
+```
+
+```{r}
+p4
+```
+
+# For by state
+
+```{r}
+# get all the states
+states <- ds %>%
+  select(state) %>%
+  distinct() %>%
+  collect() %>%
+  pull(state) %>%
+  sort()
+ # 42 states total
+
+```
+
+```{r}
+# Create an empty data.frame to store residual info
+residual_summary <- data.frame(
+  state = character(),
+  max_residual_year = integer(),
+  max_residual_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# dictionaries to save plots
+plots_base <- file.path(location, "plots")
+daily_dir <- file.path(plots_base, "daily")
+seasonal_dir <- file.path(plots_base, "seasonal")
+stl_dir <- file.path(plots_base, "stl")
+```
+
+```{r}
+# this is to check that everything is going well for one state
+state_param <- states[1] # not stl: ar, nh, wy
+ds_state <- ds %>%
+    filter(state == state_param) %>%
+    collect()
+
+
+# Plot daily stops
+  p_daily <- plot_stops_per_day(ds_state, title = paste("Number of Stops per Day -", state_param))
+  ggsave(filename = file.path(daily_dir, paste0("daily_stops_", state_param, ".png")), plot = p_daily, width = 10, height = 6)
+ p_daily_after <- plot_stops_per_day(ds_state, title = paste("Number of Stops per Day -", state_param, "(after 2002)"), start_date = '2003-01-01')
+  ggsave(filename = file.path(daily_dir, paste0("daily_stops_after_2002_", state_param, ".png")), plot = p_daily_after, width = 10, height = 6)
+
+  
+# TODO: only keep one of these two
+stops_ts_monthly <- prepare_monthly_ts(ds_state, start_date = '2003-01-01')$monthly_df
+stops_ts_monthly <- prepare_monthly_ts(ds_state)$monthly_df
+
+ p_season <- plot_stops_by_season(stops_ts_monthly, title = paste("Number of Stops per Day (Colored by Season) -", state_param))
+  ggsave(filename = file.path(seasonal_dir, paste0("seasonal_stops_", state_param, ".png")), plot = p_season, width = 10, height = 6)
+
+
+if (nrow(stops_ts_monthly) >= 24) {
+  
+  stl_result <- analyze_stl_decomposition(stops_ts_monthly, title =paste( "STL Decomposition of Stops Time Series - ", state_param))
+    
+    
+     p_stl <- stl_result$plot
+    ggsave(filename = file.path(stl_dir, paste0("stl_decomposition_", state_param, ".png")), plot = p_stl, width = 10, height = 8)
+
+    # max residuals
+    max_residual_year_p <- stl_result$max_residual_year
+    max_residual_value_p <- stl_result$max_residual_value
+    
+  residual_summary <- rbind(
+      residual_summary,
+      data.frame(
+        state = state_param,
+        max_residual_year = max_residual_year_p,
+        max_residual_value = max_residual_value_p
+      )
+    )  
+      # Continue as planned...
+    } else {
+      warning(paste("Skipping STL for", state_param, "- not enough data"))
+    }
+
+
+```
+
+```{r}
+residual_summary
+```
+
+```{r}
+for (state_param in states) {
+  message("Processing state: ", state_param)
+  
+  # Skip problematic states if needed
+  #if (state_param %in% c("NH", "WY", "AR")) {
+  #  warning(paste("Skipping", state_param, "- known issue with STL"))
+  #  next
+  #}
+    
+  
+  # Filter data for the state
+  ds_state <- ds %>%
+    filter(state == state_param) %>%
+    collect()
+  
+  # Plot daily stops
+  p_daily <- plot_stops_per_day(ds_state, title = paste("Number of Stops per Day -", state_param))
+  ggsave(filename = file.path(daily_dir, paste0("daily_stops_", state_param, ".png")),
+         plot = p_daily, width = 10, height = 6)
+
+  p_daily_after <- plot_stops_per_day(ds_state, 
+                                      title = paste("Number of Stops per Day -", state_param, "(after 2002)"), 
+                                      start_date = '2003-01-01')
+  ggsave(filename = file.path(daily_dir, paste0("daily_stops_after_2002_", state_param, ".png")),
+         plot = p_daily_after, width = 10, height = 6)
+  
+  # Prepare monthly time series
+  stops_ts_monthly <- prepare_monthly_ts(ds_state)$monthly_df
+  
+  # Plot by season
+  p_season <- plot_stops_by_season(stops_ts_monthly, 
+                                   title = paste("Number of Stops per Day (Colored by Season) -", state_param))
+  ggsave(filename = file.path(seasonal_dir, paste0("seasonal_stops_", state_param, ".png")),
+         plot = p_season, width = 10, height = 6)
+  
+  # STL decomposition (only if enough data)
+if (nrow(stops_ts_monthly) >= 24) {
+  tryCatch({
+    stl_result <- analyze_stl_decomposition(stops_ts_monthly, 
+                                            title = paste("STL Decomposition of Stops Time Series - ", state_param))
+    
+    p_stl <- stl_result$plot
+    ggsave(filename = file.path(stl_dir, paste0("stl_decomposition_", state_param, ".png")),
+           plot = p_stl, width = 10, height = 8)
+    
+    # Extract max residuals
+    max_residual_year_p <- stl_result$max_residual_year
+    max_residual_value_p <- stl_result$max_residual_value
+    
+    residual_summary <- rbind(
+      residual_summary,
+      data.frame(
+        state = state_param,
+        max_residual_year = max_residual_year_p,
+        max_residual_value = max_residual_value_p
+      )
+    )
+  }, error = function(e) {
+    warning(paste("Skipping STL for", state_param, "-", e$message))
+  })
+}
+
+}
+
+```
+
+```{r}
+# save df residual info
+file_path <- file.path(location, "residual_summary_model.xlsx")
+
+# Save the DataFrame as Excel
+openxlsx::write.xlsx(residual_summary, file = file_path)
+```

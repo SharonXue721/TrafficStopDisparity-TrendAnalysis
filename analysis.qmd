@@ -1,0 +1,74 @@
+---
+title: "Analysis"
+author: "David Awosoga"
+format: html
+editor: visual
+---
+
+# Analysis
+
+After running `data-acqusition.qmd`, we can now use the `.parquet` files that are saved in GitHub Releases for our analysis
+
+```{r}
+#| eval: false
+
+# set path to save the parquet files
+parquet_path = file.path(location, "data", "parquet")
+
+# create the directory if it doesn't exist
+if (!dir.exists(parquet_path)) {
+  dir.create(parquet_path, recursive = TRUE)
+}
+
+library(piggyback)
+# list all available parquet files in the GitHub release
+files <- piggyback::pb_list(tag = "OPP-data") %>% 
+  filter(str_detect(file_name, ".parquet$")) %>% 
+  pull(file_name)
+
+# download the parquet files from the GitHub release
+piggyback::pb_download(
+  file = files,
+  dest = parquet_path,
+  tag = "OPP-data", 
+)
+```
+
+To work with the data, we use the `arrow` library.
+
+```{r}
+library(arrow)
+ds <- arrow::open_dataset(parquet_path, format = "parquet")
+```
+
+You can pretty much perform the normal `dplyr` functions, but the only caveat is that the data is stored asynchronously so you have to end your statements with `collect()` to see the resulting dataframe. This will be a bit slow since there's a lot of data. For example, to see all of the traffic stops in Arizona, you would do:
+
+```{r}
+
+ds %>% 
+  filter(state == "AZ") %>% 
+  collect() # this is what actually gets you the dataframe
+
+```
+
+Oh yeah, and here's the data with the license demographics
+
+```{r}
+
+us_states <- data.frame(state.abb, state.area, state.division, state.region, state.name, state.center %>% bind_rows()) %>% 
+  janitor::clean_names()
+
+license_demographics <- read_csv("data/license_demographics.csv", show_col_types = F) %>% 
+  left_join(us_states, by = c("state" = "state_name"))
+```
+
+Now we can do whatever we want, such as determining which states to use our analysis. The following example shows that 51 out of the 88 data sets include coordinate (latitude and longitudinal) data.
+
+```{r}
+
+ds %>% 
+  filter(!is.na(lng), !is.na(lat)) %>% 
+  distinct(state, city) %>% 
+  collect()
+
+```

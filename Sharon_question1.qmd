@@ -1,0 +1,358 @@
+---
+title: "Question 1"
+author: Sharon
+format: 
+  revealjs:
+    theme: simple
+    date: 2025-07-30
+    logo: images/uw-logo.png
+    footer: "STAT 938 - Statistical Consulting"
+    highlight-style: github
+    slide-number: true
+    code-fold: true 
+    toc: true
+    code-line-numbers: true
+    include-in-header: |
+      <style>
+        table.dataTable {
+        font-size: 60% !important;
+        }
+        div.dataTables_wrapper {
+        font-size: 60%;
+        }
+        caption {
+        font-size: 60%;
+        font-style: italic;
+        }
+      </style>
+execute:
+  echo: false
+  include: true
+  warning: false
+  message: false
+---
+
+# Question 1
+
+-   Is there evidence that traffic stops disproportionately target men?
+
+-   Are certain cities/locations “balanced” in terms of how traffic stops reflect the demography of that city/location?
+
+## Setup
+
+-   **Techniques:** 
+
+    ::: {style="font-size:80%"}
+    -   **Proportion calculation**: For each state, we computed the proportion of traffic stops attributed to a particular group (e.g., male drivers or stops per state), and compared it to the corresponding group’s share of the licensed driver population.
+
+    -   **Spatial visualization (Choropleth map)**: We used spatial visualizations to map the differences between stop and license proportions across states. This allowed for quick identification of geographic patterns in over- or under-representation.
+    :::
+
+------------------------------------------------------------------------
+
+::: notes
+-   Although raw percentage differences between proportions provide intuitive insights, they fail to account for varying state population sizes. 
+
+-   It’s especially useful when sample sizes are large and traditional hypothesis testing (e.g., p-values) becomes overly sensitive.
+:::
+
+-   **Techniques**:
+
+    -   **Cohen’s h (Effect Size)**: statistically measure the difference between two proportions, independent of sample size. 
+
+        $$
+        h = 2 \cdot \arcsin(\sqrt{p_1}) - 2 \cdot \arcsin(\sqrt{p_2})
+        $$
+
+        -   Interpretation Thresholds
+
+            <div>
+
+            ::: {style="font-size:70%"}
+            | Cohen's *h* Range | Interpretation        |
+            |-------------------|-----------------------|
+            | h \< 0.20         | Negligible difference |
+            | 0.20 \< h \< 0.50 | Small effect          |
+            | 0.50 \< h \< 0.80 | Medium effect         |
+            | h \> 0.80         | Large effect          |
+            :::
+
+            </div>
+
+------------------------------------------------------------------------
+
+-   **Workflow**
+
+    -   **Datascope**: Focused on overlapping time period (2014–2015) across major U.S. states. For each year, calculate the proportions(male stops, male drivers; licensed drivers proportion in the whole US for each state, stop proportion of the whole US for each state)
+
+    -   **Visualization**: Generate choropleth maps to visualize geographic differences in stop vs. license proportions.
+
+    -   **Cohen’s** **h**: to statistically measure the difference
+
+------------------------------------------------------------------------
+
+## Results
+
+Is there evidence that traffic stops disproportionately target men?
+
+::: {style="font-size:80%"}
+-   Whole US 
+
+    -   ::: {style="font-size:80%"}
+        Male_stop_proportion = 66.534%
+        :::
+
+    -   ::: {style="font-size:80%"}
+        Male_licensed_driver_proportion = 49.415%
+        :::
+
+    -   ::: {style="font-size:80%"}
+        Cohen_h = 0.34852
+        :::
+
+    -   ::: {style="font-size:80%"}
+        Result: Mildly overstop Male drivers
+        :::
+:::
+
+------------------------------------------------------------------------
+
+<div>
+
+-   State level
+
+    -   All states show positive gaps → more men are stopped than expected.
+
+    -   Similar pattern for both years.
+
+</div>
+
+------------------------------------------------------------------------
+
+![Figure 1: Difference Between Male Traffic Stops & Licensed Male Drivers by state in 2014](Male_traffic_stop_&_male_drivers_2014.png)
+
+::: notes
+The 32 states with complete data all show positive gaps
+
+Especially for Pennsylvania (27.43%), Rhode Island (22.32%) and North Dakota (21.45%)
+:::
+
+------------------------------------------------------------------------
+
+![Figure 2: Difference Between Male Traffic Stops & Licensed Male Drivers by state in 2015](Male_traffic_stop_&_male_drivers_2015.png)
+
+::: notes
+2015 shares the similar pattern.
+
+Pennsylvania (25.48%) still held the largest difference, followed by Rhode Island (22.85%) and Massachusetts (20.02%)
+:::
+
+------------------------------------------------------------------------
+
+::: {style="font-size:70%"}
+-   Cohen's h Results
+:::
+
+::: {.scrollable-table style="font-size:60%"}
+```{r}
+library(readr)
+library(knitr)
+library(DT)
+
+comparison_male_2014 <- read_csv("comparison_male_2014.csv")
+
+datatable(comparison_male_2014,
+          options = list(
+            scrollY = 350,       
+            pageLength = 32,   
+            scrollX = TRUE      
+          ),
+          class = 'compact stripe',
+          caption = "Interactive Comparison of Stop vs. Driver Proportions (Male, 2014)"
+)
+```
+:::
+
+------------------------------------------------------------------------
+
+::: {style="font-size:70%"}
+-   Cohen's h Results
+:::
+
+::: {.scrollable-table style="font-size:60%"}
+```{r}
+library(readr)
+library(knitr)
+library(DT)
+
+comparison_male_2015 <- read_csv("comparison_male_2015.csv")
+
+datatable(comparison_male_2015,
+          options = list(
+            scrollY = 350,       
+            pageLength = 32,     
+            scrollX = TRUE      
+          ),
+          class = 'compact stripe',
+          caption = "Interactive Comparison of Stop vs. Driver Proportions (Male, 2015)"
+)
+```
+:::
+
+::: notes
+NV: Nevada
+
+KS: Kansas
+
+PA: Pennsylvania
+:::
+
+------------------------------------------------------------------------
+
+::: {style="font-size: 70%"}
+Key Takeaways
+
+-   **Nationwide Trend:** Most states, as well as the U.S. overall, show **mild overrepresentation of male drivers** in traffic stops compared to their share of licensed drivers.
+
+-   **Balanced States:** Only **Nevada (NV)** and **Kansas (KS)** show **gender-balanced enforcement**, with male stop rates aligning closely with male driver proportions.
+
+-   **High Overstop State:** **Pennsylvania (PA)** exhibits a **notably higher overstop rate** for male drivers.
+
+Real-world Takeaways
+
+-   **Operational Patterns:** The mild overstop of male drivers may be linked to **driving behavior patterns**
+:::
+
+------------------------------------------------------------------------
+
+## Results Cont.
+
+Are certain cities/locations “balanced” in terms of how traffic stops reflect the demography of that city/location?
+
+::: {style="font-size:80%"}
+-   Datascope: 2014-2015
+
+-   39 states
+
+-   3 states did not have any overlap with other major states
+
+-   Choropleth maps show the difference between stop and license proportions by state in 2014 and 2015.
+
+-   Red indicates more stops than expected, blue indicates fewer stops than expected, white/gray denotes minimal difference. 
+:::
+
+------------------------------------------------------------------------
+
+![Figure 3: Differences between Traffic Stops & Licensed Drivers Proportion by State in 2014](traffic_stop_difference_map_2014.png)
+
+------------------------------------------------------------------------
+
+![Figure 4: Differences between Traffic Stops & Licensed Drivers Proportion by State in 2015](traffic_stop_difference_map_2015.png)
+
+::: notes
+-   Consistently Under-Policed States (fewer stops than expected in both years):
+
+    -   Pennsylvania(PA) 
+
+    -   Florida(FL)
+
+    -   Michigan(MI)
+
+    -   Indiana(IN)
+
+-   Consistently Over-Policed States (more stops than expected in both years):
+
+    -   California(CA)
+
+    -   Illinois(IL)
+
+    -   Missouri(MO)
+
+    -   North Carolina(NC)
+:::
+
+------------------------------------------------------------------------
+
+::: {style="font-size: 80%"}
+-   <div>
+
+    Consistently **Under-Policed States** (fewer stops than expected in both years):
+
+    </div>
+
+    -   Pennsylvania(PA) 
+
+    -   Florida(FL)
+
+    -   Michigan(MI)
+
+    -   Indiana(IN)
+
+-   Consistently **Over-Policed States** (more stops than expected in both years):
+
+    -   California(CA)
+
+    -   Illinois(IL)
+
+    -   Missouri(MO)
+
+    -   North Carolina(NC)
+:::
+
+------------------------------------------------------------------------
+
+::: {.scrollable-table style="font-size:60%"}
+```{r}
+
+comparison_2014 <- read_csv("comparison_2014.csv")
+
+datatable(comparison_2014,
+          options = list(
+            scrollY = 500,       
+            pageLength = 39,     
+            scrollX = TRUE      
+          ),
+          class = 'compact stripe',
+          caption = "Interactive Comparison of Stop vs. Licensed drivers (2014)"
+)
+```
+:::
+
+------------------------------------------------------------------------
+
+::: {.scrollable-table style="font-size:60%"}
+```{r}
+
+comparison_2015 <- read_csv("comparison_2015.csv")
+
+datatable(comparison_2015,
+          options = list(
+            scrollY = 500,       
+            pageLength = 39,     
+            scrollX = TRUE      
+          ),
+          class = 'compact stripe',
+          caption = "Interactive Comparison of Stop vs. Licensed drivers (2015)"
+)
+```
+:::
+
+------------------------------------------------------------------------
+
+::: {style="font-size: 70%"}
+| State        | 2014              | 2015              |
+|--------------|-------------------|-------------------|
+| Missouri(MO) | Mildly Imbalanced | Mildly Imbalanced |
+| Michigan(MI) | Mildly Imbalanced | Balaneced         |
+| Indiana(IN)  | Mildly Imbalanced | Mildly Imbalanced |
+:::
+
+::: {style="font-size: 80%"}
+-   **Most states are statistically balanced** in terms of traffic stop proportions vs. licensed driver proportions.
+
+-   **Only a few states** showed *mild imbalance* across both years, These imbalances are small in magnitude and may have limited real-world impact.
+
+-   **No strong evidence of systemic geographic bias** in traffic stops across states
+
+-   **Small imbalances may reflect local operational factors** (e.g., highway traffic, policing resource allocation)
+:::

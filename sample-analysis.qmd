@@ -1,0 +1,103 @@
+---
+title: "Sample Anaysis"
+format: html
+editor: visual
+---
+
+## Question 1
+
+1.  **Is there evidence that traffic stops disproportionately target men?**
+
+```{r}
+
+
+state_data <- read_csv(paste(location, "az_statewide_2020_04_01.csv", sep = "/"))
+
+# calculate proportion of male stopped drivers
+
+male_proportion = state_data %>% pull(subject_sex) %>% table() %>% sort(decreasing = TRUE)
+
+# get proportion of male drivers
+
+prop_male_drivers = license_demographics %>% filter(state == "Arizona") %>% pull(percent_male_drivers)
+
+# perform a proportion test
+
+prop.test(male_proportion, p = prop_male_drivers/100)
+
+```
+
+## Question 2
+
+```{r}
+
+days_distribution <- state_data %>% 
+  select(date, time, location, subject_sex) %>% 
+  filter(!is.na(date)) %>% 
+  mutate(day_of_week = weekdays(as.Date(date))) %>% 
+  count(day_of_week)
+
+# visualize the distribution of traffic stops across days of the week
+
+days_distribution %>% 
+  ggplot() + 
+  geom_bar(aes(x = day_of_week, y = n), stat = "identity", fill = "steelblue") + 
+  theme_bw()
+
+# perform a chi-square goodness of fit test across all days
+
+chisq.test(days_distribution$n, p = rep(1/7, 7))
+
+# perform a chi-square goodness of fit test across weekdays vs weekends
+
+weekend_distribution <- state_data %>% 
+  select(date, time, location, subject_sex) %>% 
+  filter(!is.na(date)) %>% 
+  mutate(day_of_week = weekdays(as.Date(date)), 
+         weekend = if_else(day_of_week %in% c("Saturday", "Sunday"), "Weekend", "Weekday")) %>% 
+  count(weekend)
+
+chisq.test(weekend_distribution$n, p = c(5/7, 2/7))
+
+
+day_distribution <- state_data %>% 
+  select(date, time, location, subject_sex) %>% 
+  filter(!is.na(date)) %>% 
+  mutate(day_of_week = weekdays(as.Date(date))) %>% 
+  filter(day_of_week %in% c("Tuesday", "Thursday")) %>% 
+  count(day_of_week)
+
+chisq.test(day_distribution$n, p = rep(1/2, 2)) # checks out
+
+# perform a chi-square goodness of fit test across hours of the day
+
+time_distribution <- state_data %>% 
+  select(date, time, location, subject_sex) %>% 
+  filter(!is.na(time)) %>% 
+  mutate(hour_of_day = format(as.POSIXct(time, format = "%H:%M:%S"), "%H")) %>% 
+  count(hour_of_day) 
+
+chisq.test(time_distribution$n, p = rep(1/24, 24)) # checks out
+
+part_of_day_distribution <- state_data %>% 
+  select(date, time, location, subject_sex) %>% 
+  filter(!is.na(time)) %>% 
+  mutate(hour_of_day = format(as.POSIXct(time, format = "%H:%M:%S"), "%H"), 
+         part_of_day = case_when(
+           hour_of_day %in% c("23", "00", "01", "02", "03", "04", "05") ~ "Night",
+           hour_of_day %in% c("06", "07", "08", "09", "10", "11") ~ "Morning",
+           hour_of_day %in% c("12", "13", "14", "15", "16", "17") ~ "Afternoon",
+           TRUE ~ "Evening"
+         )) %>% 
+  count(part_of_day) 
+
+chisq.test(time_distribution$n, p = c(7/24, 6/24, 6/24, 5/24)) # checks out
+
+# visualize the distribution of traffic stops across hours of the day
+
+time_distribution %>% 
+  ggplot() + 
+  geom_bar(aes(x = hour_of_day, y = n), stat = "identity", fill = "steelblue") + 
+  theme_bw() + 
+  labs(x = "Hour of Day", y = "Number of Traffic Stops", title = "Distribution of Traffic Stops Across Hours of the Day")
+```

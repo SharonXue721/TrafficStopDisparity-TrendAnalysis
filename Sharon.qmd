@@ -1,0 +1,587 @@
+---
+title: "Sharon - visualization"
+author: "Sharon Xue"
+format: pdf
+editor: visual
+---
+
+## Question 4
+
+Question 4 -
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+library(sf)     
+library(stringr)
+library(tigris)    
+options(tigris_use_cache = TRUE)
+library(arrow)
+library(ggrepel)
+install.packages("effsize")
+library(effsize)
+
+parquet_path <- "data/parquet"
+ds <- arrow::open_dataset(parquet_path, format = "parquet")
+
+```
+
+```{r}
+# calculate the proportion of the count of stops for each state 
+
+# Pull date and state, get the time range of each state
+state_date_range <- ds %>%
+  select(state, date) %>%
+  filter(!is.na(state), !is.na(date)) %>%
+  mutate(date = as.Date(date)) %>%
+  group_by(state) %>%
+  summarise(
+    min_date = min(date),
+    max_date = max(date), 
+    .groups = "drop"
+  ) %>%
+  collect()
+
+# set the time slot
+start_date <- as.Date("2014-01-01")
+end_date <- as.Date("2015-12-31")
+
+ds_filtered <- ds %>%
+  filter(!is.na(state), !is.na(date)) %>%
+  mutate(date = as.Date(date)) %>%
+  filter(date >= start_date, date <= end_date) %>%
+  mutate(year = year(date)) %>%
+  select(state, date, year) %>%
+  collect()
+
+# calculate the proportion of stops for each state in the time slot
+state_stop_2014 <- ds_filtered %>%
+  filter(year == 2014) %>%
+  group_by(state) %>%
+  summarise(stop_count = n(), .groups = "drop") %>%
+  mutate(percentage_2014 = round(stop_count / sum(stop_count),4)) %>%
+  arrange(desc(percentage_2014))
+
+state_stop_2015 <- ds_filtered %>%
+  filter(year == 2015) %>%
+  group_by(state) %>%
+  summarise(stop_count = n(), .groups = "drop") %>%
+  mutate(percentage_2015 = round(stop_count / sum(stop_count),4)) %>%
+  arrange(desc(percentage_2015))
+
+ds_states_all <- ds %>%
+  filter(!is.na(state)) %>%
+  distinct(state) %>%
+  pull(state)
+
+# pull the states with solid data
+ds_states_2014 <- state_stop_2014 %>%
+  pull(state)
+
+ds_states_2015 <- state_stop_2015 %>%
+  pull(state)
+
+# find out the missing state
+missing_states_2014 <- setdiff(ds_states_all, ds_states_2014)
+print(missing_states_2014)
+
+missing_states_2015 <- setdiff(ds_states_all, ds_states_2015)
+print(missing_states_2015)
+
+# from the license_demographics, get the proportion of the licenced drivers for each state over the whole country for 2014 and 2015
+
+state_lookup <- tibble::tibble(
+  state_abbr = state.abb,
+  state_full = state.name
+)
+
+license_2014 <- license_2014 %>%
+  left_join(state_lookup, by = c("state" = "state_full"))
+
+license_2014_filtered <- license_2014 %>%
+  semi_join(state_stop_2014, by = c("state_abbr" = "state"))
+
+license_2014_proportion <- license_2014_filtered %>%
+  mutate(state = state_abbr) %>%  
+  mutate(driver_prop = round(total_drivers / sum(total_drivers), 4)) %>%
+  select(state, total_drivers, driver_prop)
+
+# do for 2015
+license_2015 <- license_2015 %>%
+  left_join(state_lookup, by = c("state" = "state_full"))
+
+license_2015_filtered <- license_2015 %>%
+  semi_join(state_stop_2015, by = c("state_abbr" = "state"))
+
+license_2015_proportion <- license_2015_filtered %>%
+  mutate(state = state_abbr) %>% 
+  mutate(driver_prop = round(total_drivers / sum(total_drivers), 4)) %>%
+  select(state, total_drivers, driver_prop)
+
+# calculate the difference
+comparison_2014 <- state_stop_2014 %>%
+  rename(stop_prop = percentage_2014) %>%
+  left_join(license_2014_proportion, by = "state") %>%
+  mutate(diff = stop_prop - driver_prop)
+
+comparison_2015 <- state_stop_2015 %>%
+  rename(stop_prop = percentage_2015) %>%
+  left_join(license_2015_proportion, by = "state") %>%
+  mutate(diff = stop_prop - driver_prop)
+
+# convert to long format
+comparison_long_2014 <- comparison_2014 %>%
+  pivot_longer(cols = c(stop_prop, driver_prop),
+               names_to = "type", values_to = "percentage") %>%
+  mutate(
+    percentage = percentage * 100,
+    type = recode(type,
+                  stop_prop = "Traffic Stops",
+                  driver_prop = "Licensed Drivers")
+  )%>%
+  mutate(percentage = round(percentage, 2))
+
+label_2014 <- comparison_2014 %>%
+  mutate(label = paste0(round(diff, 2), "%")) %>%
+  select(state, stop_prop, label)
+
+#####
+comparison_long_2015 <- comparison_2015 %>%
+  pivot_longer(cols = c(stop_prop, driver_prop),
+               names_to = "type", values_to = "percentage") %>%
+  mutate(
+    percentage = percentage * 100,
+    type = recode(type,
+                  stop_prop = "Traffic Stops",
+                  driver_prop = "Licensed Drivers")
+  )%>%
+  mutate(percentage = round(percentage, 2))
+
+label_2015 <- comparison_2015 %>%
+  mutate(label = paste0(round(diff, 2), "%")) %>%
+  select(state, stop_prop, label)
+
+```
+
+```{r}
+# read USA map
+us_states <- states(cb = TRUE, resolution = "20m", class = "sf")
+
+# merge map and data 
+us_map_2014 <- us_states %>%
+  left_join(comparison_2014, by = c("STUSPS" = "state"))%>%
+  mutate(diff = diff * 100)
+
+# calculate the centriod point for the state label 
+us_map_centroids_2014 <- us_map_2014 %>%
+  st_transform(2163) %>%
+  st_point_on_surface() %>%
+  st_transform(4326) %>%
+  mutate(
+    label = ifelse(!is.na(diff),
+                   paste0(STUSPS, "\n", sprintf("%.2f%%", diff)),
+                   STUSPS)  
+  )
+
+# draw the map
+p_2014 <- ggplot(us_map_2014) +
+  geom_sf(aes(fill = diff), color = "white", size = 0.3) +
+  scale_fill_gradient2(
+    low = "#4575b4", mid = "white", high = "#d73027",
+    midpoint = 0, na.value = "grey90", name = "Stop - Driver %"
+  ) +
+  geom_text_repel(
+    data = us_map_centroids_2014,
+    aes(x = st_coordinates(geometry)[,1],
+        y = st_coordinates(geometry)[,2],
+        label = label),
+    size = 3, color = "black", segment.color = "grey50", max.overlaps = Inf
+  ) +
+  coord_sf(
+    xlim = c(-125, -65),
+    ylim = c(24, 50),
+    expand = FALSE
+  ) +
+  labs(
+    title = "Difference Between Traffic Stops and Licensed Drivers Proportion by State in 2014",
+    subtitle = "Only 39 states with data are shown in color; others in gray"
+  ) +
+  theme_void() +  
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5)
+  )
+
+print(p_2014)
+
+ggsave("traffic_stop_difference_map_2014.png", plot = p_2014, width = 10, height = 6, dpi = 300)
+```
+
+```{r}
+# merge map and data 
+us_map_2015 <- us_states %>%
+  left_join(comparison_2015, by = c("STUSPS" = "state"))%>%
+  mutate(diff = diff * 100)
+
+# calculate the centriod point for the state label 
+us_map_centroids_2015 <- us_map_2015 %>%
+  st_transform(2163) %>%
+  st_point_on_surface() %>%
+  st_transform(4326) %>%
+  mutate(
+    label = ifelse(!is.na(diff),
+                   paste0(STUSPS, "\n", sprintf("%.2f%%", diff)),
+                   STUSPS)  
+  )
+
+# draw the map
+p_2015 <- ggplot(us_map_2015) +
+  geom_sf(aes(fill = diff), color = "white", size = 0.3) +
+  scale_fill_gradient2(
+    low = "#4575b4", mid = "white", high = "#d73027",
+    midpoint = 0, na.value = "grey90", name = "Stop - Driver %"
+  ) +
+  geom_text_repel(
+    data = us_map_centroids_2015,
+    aes(x = st_coordinates(geometry)[,1],
+        y = st_coordinates(geometry)[,2],
+        label = label),
+    size = 3, color = "black", segment.color = "grey50", max.overlaps = Inf
+  ) +
+  coord_sf(
+    xlim = c(-125, -65),
+    ylim = c(24, 50),
+    expand = FALSE
+  ) +
+  labs(
+    title = "Difference Between Traffic Stops and Licensed Drivers Proportion by State in 2015",
+    subtitle = "Only 39 states with data are shown in color; others in gray"
+  ) +
+  theme_void() +  
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5)
+  )
+
+print(p_2015)
+ggsave("traffic_stop_difference_map_2015.png", plot = p_2015, width = 10, height = 6, dpi = 300) 
+
+```
+
+```{r}
+
+# # 2014
+# total_stops_2014 <- sum(comparison_2014$stop_count)
+# total_drivers_2014 <- sum(comparison_2014$total_drivers)
+# 
+# # 2015
+# total_stops_2015 <- sum(comparison_2015$stop_count)
+# total_drivers_2015 <- sum(comparison_2015$total_drivers)
+# 
+# comparison_2014 <- comparison_2014 %>%
+#   rowwise() %>%
+#   mutate(
+#     p_value = prop.test(x = stop_count,
+#                         n = !!total_stops_2014,
+#                         p = driver_prop)$p.value,
+#     balance_status = ifelse(p_value < 0.001, "Imbalanced", "Balanced")
+#   ) %>%
+#   ungroup()
+# 
+# comparison_2015 <- comparison_2015 %>%
+#   rowwise() %>%
+#   mutate(
+#     p_value = prop.test(x = stop_count,
+#                         n = !!total_stops_2015,
+#                         p = driver_prop)$p.value,
+#     balance_status = ifelse(p_value < 0.001, "Imbalanced", "Balanced")
+#   ) %>%
+#   ungroup()
+
+# comparison_2014 <- comparison_2014 %>%
+#   mutate(
+#     balance_status = ifelse(abs(stop_prop - driver_prop) < 0.001,
+#                             "Balanced", "Imbalanced")
+#   )
+# 
+# comparison_2015 <- comparison_2015 %>%
+#   mutate(
+#     balance_status = ifelse(abs(stop_prop - driver_prop) < 0.001,
+#                             "Balanced", "Imbalanced")
+#   )
+
+
+
+
+```
+
+```{r}
+# effect size: sample-size-independent
+comparison_2014 <- comparison_2014 %>%
+  mutate(
+    cohens_h = 2 * asin(sqrt(stop_prop)) - 2 * asin(sqrt(driver_prop))  # Cohen's h
+  ) %>%
+  mutate(
+    h_interpretation = case_when(
+      abs(cohens_h) < 0.2 ~ "Balanced",
+      abs(cohens_h) < 0.5 ~ "Mildly Imbalanced",
+      abs(cohens_h) < 0.8 ~ "Imbalanced",
+      TRUE ~ "large"
+    )
+  )%>%
+  mutate(year = 2014)%>% 
+  select(state, year, cohens_h, h_interpretation)
+
+write.csv(comparison_2014, "comparison_2014.csv", row.names = FALSE)
+```
+
+```{r}
+# effect size: sample-size-independent
+comparison_2015 <- comparison_2015 %>%
+  mutate(
+    cohens_h = 2 * asin(sqrt(stop_prop)) - 2 * asin(sqrt(driver_prop))  # Cohen's h
+  ) %>%
+  mutate(
+    h_interpretation = case_when(
+      abs(cohens_h) < 0.2 ~ "Balanced",
+      abs(cohens_h) < 0.5 ~ "Mildly Imbalanced",
+      abs(cohens_h) < 0.8 ~ "Imbalanced",
+      TRUE ~ "large"
+    )
+  )%>%
+  mutate(year = 2015)%>% 
+  select(state, year, cohens_h, h_interpretation)
+
+write.csv(comparison_2015, "comparison_2015.csv", row.names = FALSE)
+```
+
+```{r}
+combined_comparison <- bind_rows(comparison_2014, comparison_2015)
+
+effect_compare <- combined_comparison %>%
+  select(state, year, cohens_h, h_interpretation) %>%
+  pivot_wider(
+    names_from = year,
+    values_from = c(cohens_h, h_interpretation),
+    names_sep = "_"
+  )
+
+write.csv(effect_compare, "effect_size_comparison_2014_2015.csv", row.names = FALSE)
+```
+
+## Question 1
+
+```{r}
+# In general, for the whole US
+ds_filtered_male <- ds %>%
+  filter(!is.na(state), !is.na(date),!is.na(subject_sex)) %>%
+  mutate(date = as.Date(date)) %>%
+  filter(date >= start_date, date <= end_date) %>%
+  mutate(year = year(date)) %>%
+  select(state, date, subject_sex,year) %>%
+  collect()
+
+male_stop_prop_us <- ds_filtered_male %>%
+  filter(subject_sex %in% c("male", "Male", "MALE")) %>%
+  summarise(male_stops = n()) %>%
+  mutate(total_stops = nrow(ds_filtered_male),
+         prop_male_stop = male_stops / total_stops)
+
+prop_male_license_us <- (0.4947+0.4936)/2
+
+cohen_h_us <- 2 * abs(asin(sqrt(male_stop_prop_us$prop_male_stop)) - asin(sqrt(prop_male_license_us)))
+
+# Mildly overstop male
+```
+
+```{r}
+license_2014_male_proportion <- license_2014_filtered %>%
+  mutate(state = state_abbr) %>%  
+  mutate(male_prop = round(percent_male_drivers/100, 4)) %>%
+  select(state, male_prop)
+
+license_2015_male_proportion <- license_2015_filtered %>%
+  mutate(state = state_abbr) %>%  
+  mutate(male_prop = round(percent_male_drivers/100, 4)) %>%
+  select(state, male_prop)
+
+colnames(ds)
+
+
+
+```
+
+```{r}
+stop_male_prop_2014 <- ds_filtered_male %>%
+  filter(year == 2014) %>%
+  group_by(state) %>%
+  summarise(
+    total_stops = n(),
+    male_stops = sum(subject_sex == "male", na.rm = TRUE),
+    stop_male_prop = round(male_stops / total_stops,4)
+  )
+
+stop_male_prop_2015 <- ds_filtered_male %>%
+  filter(year == 2015) %>%
+  group_by(state) %>%
+  summarise(
+    total_stops = n(),
+    male_stops = sum(subject_sex == "male", na.rm = TRUE),
+    stop_male_prop = round(male_stops / total_stops,4)
+  )
+```
+
+```{r}
+# calculate the difference
+comparison_male_2014 <- stop_male_prop_2014 %>%
+  left_join(license_2014_male_proportion, by = "state") %>%
+  mutate(diff = stop_male_prop - male_prop)
+
+comparison_male_2015 <- stop_male_prop_2015 %>%
+  left_join(license_2015_male_proportion, by = "state") %>%
+  mutate(diff = stop_male_prop - male_prop)
+```
+
+```{r}
+comparison_male_2014 <- comparison_male_2014 %>%
+  mutate(
+    cohens_h = 2 * asin(sqrt(stop_male_prop)) - 2 * asin(sqrt(male_prop)) 
+  ) %>%
+  mutate(
+    h_interpretation = case_when(
+      abs(cohens_h) < 0.2 ~ "Balanced",
+      abs(cohens_h) < 0.5 & cohens_h > 0 ~ "Mildly Overstop Male",
+      abs(cohens_h) < 0.5 & cohens_h < 0 ~ "Mildly Understop Male",
+      abs(cohens_h) < 0.8 & cohens_h > 0 ~ "Overstop Male",
+      abs(cohens_h) < 0.8 & cohens_h < 0 ~ "Understop Male",
+      cohens_h >= 0.8 ~ "Severely Overstop Male",
+      cohens_h <= -0.8 ~ "Severely Understop Male"
+    )
+  )%>%
+  mutate(year = 2014)%>%
+  select(state, year, cohens_h,h_interpretation)
+
+comparison_male_2015 <- comparison_male_2015 %>%
+  mutate(
+    cohens_h = 2 * asin(sqrt(stop_male_prop)) - 2 * asin(sqrt(male_prop)) 
+  ) %>%
+  mutate(
+    h_interpretation = case_when(
+      abs(cohens_h) < 0.2 ~ "Balanced",
+      abs(cohens_h) < 0.5 & cohens_h > 0 ~ "Mildly Overstop Male",
+      abs(cohens_h) < 0.5 & cohens_h < 0 ~ "Mildly Understop Male",
+      abs(cohens_h) < 0.8 & cohens_h > 0 ~ "Overstop Male",
+      abs(cohens_h) < 0.8 & cohens_h < 0 ~ "Understop Male",
+      cohens_h >= 0.8 ~ "Severely Overstop Male",
+      cohens_h <= -0.8 ~ "Severely Understop Male"
+    )
+  )%>%
+  mutate(year = 2015)%>%
+  select(state, year, cohens_h,h_interpretation)
+
+write.csv(comparison_male_2014, "comparison_male_2014.csv", row.names = FALSE)
+write.csv(comparison_male_2015, "comparison_male_2015.csv", row.names = FALSE)
+```
+
+```{r}
+
+us_map_male_2014 <- us_states %>%
+  left_join(comparison_male_2014, by = c("STUSPS" = "state")) %>%
+  mutate(diff = diff * 100)
+
+us_map_centroids_male_2014 <- us_map_male_2014 %>%
+  st_transform(2163) %>%
+  st_point_on_surface() %>%
+  st_transform(4326) %>%
+  mutate(
+    label = ifelse(!is.na(diff),
+                   paste0(STUSPS, "\n", sprintf("%.2f%%", diff)),
+                   STUSPS)
+  )
+
+p_male_2014 <- ggplot(us_map_male_2014) +
+  geom_sf(aes(fill = diff), color = "white", size = 0.3) +
+  scale_fill_gradient2(
+    low = "#4575b4", mid = "white", high = "#d73027",
+    midpoint = 0, na.value = "grey90", name = "Male Stop - License %"
+  ) +
+  geom_text_repel(
+    data = us_map_centroids_male_2014,
+    aes(x = st_coordinates(geometry)[,1],
+        y = st_coordinates(geometry)[,2],
+        label = label),
+    size = 3, color = "black", segment.color = "grey50", max.overlaps = Inf
+  ) +
+  coord_sf(
+    xlim = c(-125, -65),
+    ylim = c(24, 50),
+    expand = FALSE
+  ) +
+  labs(
+    title = "Difference Between Male Traffic Stops and Licensed Male Drivers by State in 2014",
+    subtitle = "Only states with data are shown in color; others in gray"
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5)
+  )
+
+print(p_male_2014)
+
+ggsave("Male_traffic_stop_&_male_drivers_2014.png", plot = p_male_2014, width = 10, height = 6, dpi = 300) 
+```
+
+```{r}
+us_map_male_2015 <- us_states %>%
+  left_join(comparison_male_2015, by = c("STUSPS" = "state")) %>%
+  mutate(diff = diff * 100)
+
+us_map_centroids_male_2015 <- us_map_male_2015 %>%
+  st_transform(2163) %>%
+  st_point_on_surface() %>%
+  st_transform(4326) %>%
+  mutate(
+    label = ifelse(!is.na(diff),
+                   paste0(STUSPS, "\n", sprintf("%.2f%%", diff)),
+                   STUSPS)
+  )
+
+p_male_2015 <- ggplot(us_map_male_2015) +
+  geom_sf(aes(fill = diff), color = "white", size = 0.3) +
+  scale_fill_gradient2(
+    low = "#4575b4", mid = "white", high = "#d73027",
+    midpoint = 0, na.value = "grey90", name = "Male Stop - License %"
+  ) +
+  geom_text_repel(
+    data = us_map_centroids_male_2015,
+    aes(x = st_coordinates(geometry)[,1],
+        y = st_coordinates(geometry)[,2],
+        label = label),
+    size = 3, color = "black", segment.color = "grey50", max.overlaps = Inf
+  ) +
+  coord_sf(
+    xlim = c(-125, -65),
+    ylim = c(24, 50),
+    expand = FALSE
+  ) +
+  labs(
+    title = "Difference Between Male Traffic Stops and Licensed Male Drivers by State in 2015",
+    subtitle = "Only states with data are shown in color; others in gray"
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "right",
+    plot.title = element_text(size = 14, face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(size = 12, hjust = 0.5)
+  )
+
+print(p_male_2015)
+
+ggsave("Male_traffic_stop_&_male_drivers_2015.png", plot = p_male_2015, width = 10, height = 6, dpi = 300) 
+```
